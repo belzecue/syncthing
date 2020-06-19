@@ -7,6 +7,7 @@
 package versioner
 
 import (
+	"github.com/syncthing/syncthing/lib/config"
 	"io/ioutil"
 	"math"
 	"path/filepath"
@@ -41,7 +42,7 @@ func TestTaggedFilename(t *testing.T) {
 		}
 
 		// Test parser
-		tag := ExtractTag(tc[2])
+		tag := extractTag(tc[2])
 		if tag != tc[1] {
 			t.Errorf("%s != %s", tag, tc[1])
 		}
@@ -59,9 +60,18 @@ func TestSimpleVersioningVersionCount(t *testing.T) {
 		t.Error(err)
 	}
 
-	fs := fs.NewFilesystem(fs.FilesystemTypeBasic, dir)
+	cfg := config.FolderConfiguration{
+		FilesystemType: fs.FilesystemTypeBasic,
+		Path:           dir,
+		Versioning: config.VersioningConfiguration{
+			Params: map[string]string{
+				"keep": "2",
+			},
+		},
+	}
+	fs := cfg.Filesystem()
 
-	v := NewSimple("", fs, map[string]string{"keep": "2"})
+	v := newSimple(cfg)
 
 	path := "test"
 

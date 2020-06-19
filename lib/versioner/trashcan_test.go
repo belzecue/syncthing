@@ -7,6 +7,7 @@
 package versioner
 
 import (
+	"github.com/syncthing/syncthing/lib/config"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -53,7 +54,17 @@ func TestTrashcanCleanout(t *testing.T) {
 		}
 	}
 
-	versioner := NewTrashcan("default", fs.NewFilesystem(fs.FilesystemTypeBasic, "testdata"), map[string]string{"cleanoutDays": "7"}).(*Trashcan)
+	cfg := config.FolderConfiguration{
+		FilesystemType: fs.FilesystemTypeBasic,
+		Path:           "testdata",
+		Versioning: config.VersioningConfiguration{
+			Params: map[string]string{
+				"cleanoutDays": "7",
+			},
+		},
+	}
+
+	versioner := newTrashcan(cfg).(*trashcan)
 	if err := versioner.cleanoutArchive(); err != nil {
 		t.Fatal(err)
 	}
@@ -90,15 +101,23 @@ func TestTrashcanArchiveRestoreSwitcharoo(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	folderFs := fs.NewFilesystem(fs.FilesystemTypeBasic, tmpDir1)
+	cfg := config.FolderConfiguration{
+		FilesystemType: fs.FilesystemTypeBasic,
+		Path:           tmpDir1,
+		Versioning: config.VersioningConfiguration{
+			Params: map[string]string{
+				"fsType": "basic",
+				"fsPath": tmpDir2,
+			},
+		},
+	}
+	folderFs := cfg.Filesystem()
+
 	versionsFs := fs.NewFilesystem(fs.FilesystemTypeBasic, tmpDir2)
 
 	writeFile(t, folderFs, "file", "A")
 
-	versioner := NewTrashcan("", folderFs, map[string]string{
-		"fsType": "basic",
-		"fsPath": tmpDir2,
-	})
+	versioner := newTrashcan(cfg)
 
 	if err := versioner.Archive("file"); err != nil {
 		t.Fatal(err)
@@ -108,9 +127,21 @@ func TestTrashcanArchiveRestoreSwitcharoo(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	versionInfo, err := versionsFs.Stat("file")
+	// Check versions
+	versions, err := versioner.GetVersions()
 	if err != nil {
 		t.Fatal(err)
+	}
+
+	fileVersions := versions["file"]
+	if len(fileVersions) != 1 {
+		t.Fatalf("unexpected number of versions: %d != 1", len(fileVersions))
+	}
+
+	fileVersion := fileVersions[0]
+
+	if !fileVersion.ModTime.Equal(fileVersion.VersionTime) {
+		t.Error("time mismatch")
 	}
 
 	if content := readFile(t, versionsFs, "file"); content != "A" {
@@ -119,7 +150,16 @@ func TestTrashcanArchiveRestoreSwitcharoo(t *testing.T) {
 
 	writeFile(t, folderFs, "file", "B")
 
-	if err := versioner.Restore("file", versionInfo.ModTime().Truncate(time.Second)); err != nil {
+	versionInfo, err := versionsFs.Stat("file")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !versionInfo.ModTime().Truncate(time.Second).Equal(fileVersion.ModTime) {
+		t.Error("time mismatch")
+	}
+
+	if err := versioner.Restore("file", fileVersion.VersionTime); err != nil {
 		t.Fatal(err)
 	}
 

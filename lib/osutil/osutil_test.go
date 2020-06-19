@@ -18,196 +18,6 @@ import (
 	"github.com/syncthing/syncthing/lib/osutil"
 )
 
-func TestInWriteableDir(t *testing.T) {
-	err := os.RemoveAll("testdata")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll("testdata")
-
-	fs := fs.NewFilesystem(fs.FilesystemTypeBasic, ".")
-
-	os.Mkdir("testdata", 0700)
-	os.Mkdir("testdata/rw", 0700)
-	os.Mkdir("testdata/ro", 0500)
-
-	create := func(name string) error {
-		fd, err := os.Create(name)
-		if err != nil {
-			return err
-		}
-		fd.Close()
-		return nil
-	}
-
-	// These should succeed
-
-	err = osutil.InWritableDir(create, fs, "testdata/file")
-	if err != nil {
-		t.Error("testdata/file:", err)
-	}
-	err = osutil.InWritableDir(create, fs, "testdata/rw/foo")
-	if err != nil {
-		t.Error("testdata/rw/foo:", err)
-	}
-	err = osutil.InWritableDir(os.Remove, fs, "testdata/rw/foo")
-	if err != nil {
-		t.Error("testdata/rw/foo:", err)
-	}
-
-	err = osutil.InWritableDir(create, fs, "testdata/ro/foo")
-	if err != nil {
-		t.Error("testdata/ro/foo:", err)
-	}
-	err = osutil.InWritableDir(os.Remove, fs, "testdata/ro/foo")
-	if err != nil {
-		t.Error("testdata/ro/foo:", err)
-	}
-
-	// These should not
-
-	err = osutil.InWritableDir(create, fs, "testdata/nonexistent/foo")
-	if err == nil {
-		t.Error("testdata/nonexistent/foo returned nil error")
-	}
-	err = osutil.InWritableDir(create, fs, "testdata/file/foo")
-	if err == nil {
-		t.Error("testdata/file/foo returned nil error")
-	}
-}
-
-func TestInWritableDirWindowsRemove(t *testing.T) {
-	// os.Remove should remove read only things on windows
-
-	if runtime.GOOS != "windows" {
-		t.Skipf("Tests not required")
-		return
-	}
-
-	err := os.RemoveAll("testdata")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.Chmod("testdata/windows/ro/readonlynew", 0700)
-	defer os.RemoveAll("testdata")
-
-	create := func(name string) error {
-		fd, err := os.Create(name)
-		if err != nil {
-			return err
-		}
-		fd.Close()
-		return nil
-	}
-
-	os.Mkdir("testdata", 0700)
-
-	os.Mkdir("testdata/windows", 0500)
-	os.Mkdir("testdata/windows/ro", 0500)
-	create("testdata/windows/ro/readonly")
-	os.Chmod("testdata/windows/ro/readonly", 0500)
-
-	fs := fs.NewFilesystem(fs.FilesystemTypeBasic, ".")
-
-	for _, path := range []string{"testdata/windows/ro/readonly", "testdata/windows/ro", "testdata/windows"} {
-		err := osutil.InWritableDir(os.Remove, fs, path)
-		if err != nil {
-			t.Errorf("Unexpected error %s: %s", path, err)
-		}
-	}
-}
-
-func TestInWritableDirWindowsRemoveAll(t *testing.T) {
-	// os.RemoveAll should remove read only things on windows
-
-	if runtime.GOOS != "windows" {
-		t.Skipf("Tests not required")
-		return
-	}
-
-	err := os.RemoveAll("testdata")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.Chmod("testdata/windows/ro/readonlynew", 0700)
-	defer os.RemoveAll("testdata")
-
-	create := func(name string) error {
-		fd, err := os.Create(name)
-		if err != nil {
-			return err
-		}
-		fd.Close()
-		return nil
-	}
-
-	os.Mkdir("testdata", 0700)
-
-	os.Mkdir("testdata/windows", 0500)
-	os.Mkdir("testdata/windows/ro", 0500)
-	create("testdata/windows/ro/readonly")
-	os.Chmod("testdata/windows/ro/readonly", 0500)
-
-	if err := os.RemoveAll("testdata/windows"); err != nil {
-		t.Errorf("Unexpected error: %s", err)
-	}
-}
-
-func TestInWritableDirWindowsRename(t *testing.T) {
-	if runtime.GOOS != "windows" {
-		t.Skipf("Tests not required")
-		return
-	}
-
-	err := os.RemoveAll("testdata")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.Chmod("testdata/windows/ro/readonlynew", 0700)
-	defer os.RemoveAll("testdata")
-
-	create := func(name string) error {
-		fd, err := os.Create(name)
-		if err != nil {
-			return err
-		}
-		fd.Close()
-		return nil
-	}
-
-	os.Mkdir("testdata", 0700)
-
-	os.Mkdir("testdata/windows", 0500)
-	os.Mkdir("testdata/windows/ro", 0500)
-	create("testdata/windows/ro/readonly")
-	os.Chmod("testdata/windows/ro/readonly", 0500)
-
-	fs := fs.NewFilesystem(fs.FilesystemTypeBasic, ".")
-
-	for _, path := range []string{"testdata/windows/ro/readonly", "testdata/windows/ro", "testdata/windows"} {
-		err := os.Rename(path, path+"new")
-		if err == nil {
-			t.Skipf("seem like this test doesn't work here")
-			return
-		}
-	}
-
-	rename := func(path string) error {
-		return osutil.RenameOrCopy(fs, fs, path, path+"new")
-	}
-
-	for _, path := range []string{"testdata/windows/ro/readonly", "testdata/windows/ro", "testdata/windows"} {
-		err := osutil.InWritableDir(rename, fs, path)
-		if err != nil {
-			t.Errorf("Unexpected error %s: %s", path, err)
-		}
-		_, err = os.Stat(path + "new")
-		if err != nil {
-			t.Errorf("Unexpected error %s: %s", path, err)
-		}
-	}
-}
-
 func TestIsDeleted(t *testing.T) {
 	type tc struct {
 		path  string
@@ -216,25 +26,25 @@ func TestIsDeleted(t *testing.T) {
 	cases := []tc{
 		{"del", true},
 		{"del.file", false},
-		{"del/del", true},
+		{filepath.Join("del", "del"), true},
 		{"file", false},
 		{"linkToFile", false},
 		{"linkToDel", false},
 		{"linkToDir", false},
-		{"linkToDir/file", true},
-		{"file/behindFile", true},
+		{filepath.Join("linkToDir", "file"), true},
+		{filepath.Join("file", "behindFile"), true},
 		{"dir", false},
 		{"dir.file", false},
-		{"dir/file", false},
-		{"dir/del", true},
-		{"dir/del/del", true},
-		{"del/del/del", true},
+		{filepath.Join("dir", "file"), false},
+		{filepath.Join("dir", "del"), true},
+		{filepath.Join("dir", "del", "del"), true},
+		{filepath.Join("del", "del", "del"), true},
 	}
 
 	testFs := fs.NewFilesystem(fs.FilesystemTypeBasic, "testdata")
 
 	testFs.MkdirAll("dir", 0777)
-	for _, f := range []string{"file", "del.file", "dir.file", "dir/file"} {
+	for _, f := range []string{"file", "del.file", "dir.file", filepath.Join("dir", "file")} {
 		fd, err := testFs.Create(f)
 		if err != nil {
 			t.Fatal(err)
@@ -245,9 +55,9 @@ func TestIsDeleted(t *testing.T) {
 		// Can't create unreadable dir on windows
 		testFs.MkdirAll("inacc", 0777)
 		if err := testFs.Chmod("inacc", 0000); err == nil {
-			if _, err := testFs.Lstat("inacc/file"); fs.IsPermission(err) {
+			if _, err := testFs.Lstat(filepath.Join("inacc", "file")); fs.IsPermission(err) {
 				// May fail e.g. if tests are run as root -> just skip
-				cases = append(cases, tc{"inacc", false}, tc{"inacc/file", false})
+				cases = append(cases, tc{"inacc", false}, tc{filepath.Join("inacc", "file"), false})
 			}
 		}
 	}
@@ -329,7 +139,7 @@ func TestRenameOrCopy(t *testing.T) {
 			content = string(buf)
 		}
 
-		err := osutil.RenameOrCopy(test.src, test.dst, test.file, "new")
+		err := osutil.RenameOrCopy(fs.CopyRangeMethodStandard, test.src, test.dst, test.file, "new")
 		if err != nil {
 			t.Fatal(err)
 		}
